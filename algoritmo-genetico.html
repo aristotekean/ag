@@ -1,0 +1,965 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<style>body{margin:0;font:14px system-ui}img{max-width:100%}[hidden]{display:none!important}</style>
+<title>Algoritmo Genético Animado</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@600;700&family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans:wght@400;500&display=swap">
+<style>
+/* Layout: animation stage on the left, analysis column (stats + fitness chart) on the right; stacks on narrow screens */
+:root{
+  --bg:#e9ecf0; --panel:#ffffff; --fg:#151a21; --muted:#5b6473; --line:#d3d9e1; --grid:#e6eaef;
+  --accent:#2a78d6; --good:#008300; --cut:#eb6834; --mut:#eda100;
+  --s-avg:#2a78d6; --s-best:#eb6834;
+  --font-display:"Chakra Petch","Trebuchet MS",sans-serif;
+  --font-mono:"IBM Plex Mono",ui-monospace,Menlo,monospace;
+  --font-body:"IBM Plex Sans",system-ui,sans-serif;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#13161b; --panel:#1c2026; --fg:#eef1f5; --muted:#9ba4b1; --line:#2d343e; --grid:#262c35;
+    --accent:#3987e5; --good:#3fbf66; --cut:#d95926; --mut:#c98500;
+    --s-avg:#3987e5; --s-best:#d95926; color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#13161b; --panel:#1c2026; --fg:#eef1f5; --muted:#9ba4b1; --line:#2d343e; --grid:#262c35;
+  --accent:#3987e5; --good:#3fbf66; --cut:#d95926; --mut:#c98500;
+  --s-avg:#3987e5; --s-best:#d95926; color-scheme:dark;
+}
+body{background:var(--bg);color:var(--fg);font-family:var(--font-body);font-size:15px;line-height:1.5}
+.page{max-width:1180px;margin:0 auto;padding-block:24px 40px;padding-inline:16px;display:flex;flex-direction:column;gap:18px}
+.top{display:flex;flex-wrap:wrap;gap:16px 32px;align-items:flex-end;justify-content:space-between}
+.eyebrow{font-family:var(--font-mono);font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin:0 0 6px}
+h1{font-family:var(--font-display);font-size:clamp(28px,4vw,40px);line-height:1.05;margin:0;text-wrap:balance}
+.lede{margin:8px 0 0;max-width:62ch;color:var(--muted)}
+.controls{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.controls label{display:flex;align-items:center;gap:6px;font-family:var(--font-mono);font-size:12px;color:var(--muted)}
+button,select{font:inherit;font-family:var(--font-mono);font-size:13px;padding:7px 12px;border:1px solid var(--line);background:var(--panel);color:var(--fg);border-radius:6px;cursor:pointer}
+button.primary{background:var(--accent);border-color:var(--accent);color:#fff;min-width:118px}
+button:focus-visible,select:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.stepper{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(6,1fr);gap:6px}
+.stepper li{display:flex;gap:8px;align-items:center;padding:8px 10px;border:1px solid var(--line);border-radius:6px;background:var(--panel);font-family:var(--font-display);font-size:13px;font-weight:600;color:var(--muted);min-width:0;transition:border-color .2s,color .2s}
+.stepper li .n{font-family:var(--font-mono);font-size:11px;color:var(--muted)}
+.stepper li.active{border-color:var(--accent);color:var(--fg);box-shadow:inset 0 -3px 0 var(--accent)}
+.stepper li.active .n{color:var(--accent)}
+.stepper li.done{color:var(--fg)}
+.stepper li.done .n{color:var(--good)}
+@media (max-width:700px){.stepper{grid-template-columns:repeat(3,1fr)}}
+.caption{margin:0;min-height:3em;max-width:90ch}
+.caption strong{font-family:var(--font-display);font-weight:700}
+.hint{font-size:13px;color:var(--muted);margin:0}
+.layout{display:grid;grid-template-columns:minmax(0,7fr) minmax(280px,4fr);gap:18px;align-items:start}
+@media (max-width:900px){.layout{grid-template-columns:1fr}}
+.stage{background:var(--panel);border:1px solid var(--line);border-radius:8px;overflow-x:auto;min-width:0}
+.stage canvas{display:block}
+.side{display:flex;flex-direction:column;gap:14px;min-width:0}
+.stats{display:grid;grid-template-columns:repeat(2,1fr);gap:10px}
+.stat{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:10px 12px;min-width:0}
+.stat .k{font-family:var(--font-mono);font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted)}
+.stat .v{font-family:var(--font-display);font-size:26px;font-weight:700;line-height:1.1;font-variant-numeric:tabular-nums}
+.stat .d{font-family:var(--font-mono);font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums}
+.stat .d.up{color:var(--good)}
+.chart-card{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:12px}
+.chart-head{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:8px 12px;margin-bottom:6px}
+.chart-head h2{font-family:var(--font-display);font-size:15px;margin:0}
+.chart-head button{padding:4px 8px;font-size:12px}
+.legend{display:flex;gap:14px;font-family:var(--font-mono);font-size:12px;color:var(--muted)}
+.legend span::before{content:"";display:inline-block;width:14px;height:3px;border-radius:2px;margin-right:6px;vertical-align:middle}
+.legend .avg::before{background:var(--s-avg)}
+.legend .best::before{background:var(--s-best)}
+.chart-wrap{position:relative}
+.chart-wrap svg{width:100%;height:auto;display:block;overflow:visible}
+.grid{stroke:var(--grid)}
+.axis{stroke:var(--line)}
+.tick{fill:var(--muted);font:10px var(--font-mono)}
+.line{fill:none;stroke-width:2;stroke-linejoin:round;stroke-linecap:round}
+.line.avg{stroke:var(--s-avg)}
+.line.best{stroke:var(--s-best)}
+.area{fill:var(--s-avg);opacity:.08}
+.dot{stroke:var(--panel);stroke-width:2}
+.dot.avg{fill:var(--s-avg)}
+.dot.best{fill:var(--s-best)}
+.lbl{fill:var(--fg);font:600 11px var(--font-mono)}
+.hover-line{stroke:var(--muted);stroke-dasharray:3 3}
+.tooltip{position:absolute;top:6px;transform:translateX(-50%);background:var(--fg);color:var(--bg);font:12px var(--font-mono);padding:4px 8px;border-radius:4px;pointer-events:none;white-space:nowrap}
+.table-wrap{max-height:190px;overflow:auto;margin-top:8px}
+table{width:100%;border-collapse:collapse;font:12px var(--font-mono);font-variant-numeric:tabular-nums}
+th,td{text-align:right;padding:4px 6px;border-bottom:1px solid var(--grid)}
+th:first-child,td:first-child{text-align:left}
+th{color:var(--muted);font-weight:600;position:sticky;top:0;background:var(--panel)}
+.params{display:flex;flex-wrap:wrap;gap:8px 24px;font-family:var(--font-mono);font-size:12px;color:var(--muted);border-top:1px solid var(--line);padding-top:12px;margin:0}
+.params div{display:flex;gap:6px}
+.params dt{margin:0}
+.params dd{margin:0;color:var(--fg);font-weight:600}
+</style>
+
+</head>
+<body>
+<div class="page">
+  <header class="top">
+    <div>
+      <p class="eyebrow">Motion graphics educativo · la pizza ideal del grupo</p>
+      <h1>Algoritmo Genético</h1>
+      <p class="lede">Ocho recetas de pizza compiten por acercarse al gusto secreto del grupo. Un jurado solo devuelve un puntaje; el algoritmo nunca ve la respuesta. Cada fase se anima con los valores reales que calcula.</p>
+    </div>
+    <div class="controls" role="group" aria-label="Controles de reproducción">
+      <button id="btn-play" class="primary" type="button">Pausar</button>
+      <button id="btn-step" type="button" title="Saltar a la siguiente fase">Paso ›</button>
+      <label for="speed">Velocidad
+        <select id="speed">
+          <option value="0.5">0,5×</option>
+          <option value="1" selected>1×</option>
+          <option value="2">2×</option>
+          <option value="4">4×</option>
+        </select>
+      </label>
+      <button id="btn-reset" type="button" title="Nueva población inicial con otra semilla">Reiniciar</button>
+    </div>
+  </header>
+
+  <ol class="stepper" id="stepper" aria-label="Fases del ciclo">
+    <li data-phase="1"><span class="n">01</span>Población</li>
+    <li data-phase="2"><span class="n">02</span>Fitness</li>
+    <li data-phase="3"><span class="n">03</span>Selección</li>
+    <li data-phase="4"><span class="n">04</span>Cruce</li>
+    <li data-phase="5"><span class="n">05</span>Mutación</li>
+    <li data-phase="6"><span class="n">06</span>Sustitución</li>
+  </ol>
+
+  <p class="caption"><strong id="cap-title"></strong> <span id="cap-text"></span></p>
+  <p class="hint" id="hint" hidden>El sistema tiene activada la preferencia de movimiento reducido: la animación arranca en pausa. Use «Paso» para avanzar fase por fase o «Reproducir» para verla completa.</p>
+
+  <div class="layout">
+    <section class="stage" id="stage-wrap" aria-label="Escenario de la animación">
+      <canvas id="stage" width="700" height="450" role="img" aria-label="Animación del ciclo del algoritmo genético: población, fitness, selección por ruleta, cruce, mutación y sustitución"></canvas>
+    </section>
+
+    <aside class="side">
+      <div class="stats">
+        <div class="stat"><div class="k">Generación</div><div class="v" id="st-gen">0</div><div class="d" id="st-gen-d">población inicial</div></div>
+        <div class="stat"><div class="k">Fitness promedio</div><div class="v" id="st-avg">0</div><div class="d" id="st-avg-d">—</div></div>
+        <div class="stat"><div class="k">Mejor fitness</div><div class="v" id="st-best">0</div><div class="d">de 12 ingredientes</div></div>
+        <div class="stat"><div class="k">Mejora acumulada</div><div class="v" id="st-gain">0</div><div class="d">promedio vs. generación 0</div></div>
+      </div>
+
+      <div class="chart-card">
+        <div class="chart-head">
+          <h2>Evolución del fitness</h2>
+          <div class="legend" aria-hidden="true"><span class="avg">promedio</span><span class="best">mejor</span></div>
+          <button id="btn-table" type="button" aria-pressed="false">Ver tabla</button>
+        </div>
+        <div class="chart-wrap">
+          <svg id="chart" viewBox="0 0 360 210" aria-label="Gráfica de líneas: fitness promedio y mejor fitness por generación"></svg>
+          <div class="tooltip" id="tooltip" hidden></div>
+        </div>
+        <div class="table-wrap" id="table-wrap" hidden>
+          <table>
+            <thead><tr><th>Gen.</th><th>Promedio</th><th>Mejor</th></tr></thead>
+            <tbody id="table-body"></tbody>
+          </table>
+        </div>
+      </div>
+    </aside>
+  </div>
+
+  <dl class="params">
+    <div><dt>Población</dt><dd>N = 8 recetas</dd></div>
+    <div><dt>Cromosoma</dt><dd>L = 12 ingredientes</dd></div>
+    <div><dt>Fitness</dt><dd>coincidencias con el gusto</dd></div>
+    <div><dt>Selección</dt><dd>ruleta</dd></div>
+    <div><dt>Cruce</dt><dd>un punto, p<sub>c</sub> = 1</dd></div>
+    <div><dt>Mutación</dt><dd>p<sub>m</sub> = 0,03 / bit</dd></div>
+    <div><dt>Elitismo</dt><dd>1</dd></div>
+    <div><dt>Semilla</dt><dd id="seed-out">—</dd></div>
+  </dl>
+</div>
+
+<script>
+(function(){
+'use strict';
+
+/* ---------- Genetic algorithm parameters ---------- */
+const N = 8;          // population size
+const L = 12;         // chromosome length: one bit per ingredient (1 = included)
+const PM = 0.03;      // per-bit mutation probability
+const P1 = 0.5;       // probability of including an ingredient in the initial population
+const FMAX = L;       // maximum fitness: every ingredient matches the hidden target
+const ING = ['Queso', 'Tomate', 'Jamón', 'Piña', 'Aceitunas', 'Cebolla', 'Morrón', 'Champiñón', 'Rúcula', 'Huevo', 'Anchoas', 'Albahaca'];
+let TARGET = [];      // hidden "group taste": which ingredients the ideal pizza has
+const W = 700, H = 450;
+const TAU = Math.PI * 2;
+
+const $ = id => document.getElementById(id);
+const canvas = $('stage');
+const ctx = canvas.getContext('2d');
+const stageWrap = $('stage-wrap');
+const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+/* ---------- Utilities ---------- */
+function mulberry32(a){
+  return function(){
+    a |= 0; a = a + 0x6D2B79F5 | 0;
+    let t = Math.imul(a ^ a >>> 15, 1 | a);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  };
+}
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const lerp = (a, b, t) => a + (b - a) * t;
+const easeOut = t => 1 - Math.pow(1 - t, 3);
+const easeInOut = t => t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+/* Fitness = number of ingredients that agree with the hidden target (present or absent). The jury returns only this score. */
+const fitness = bits => bits.reduce((s, x, i) => s + (x === TARGET[i] ? 1 : 0), 0);
+const solved = () => history.length > 0 && history[history.length - 1].best === FMAX;
+const mean = arr => arr.reduce((s, x) => s + x, 0) / arr.length;
+const fmt = v => v.toFixed(2).replace('.', ',');
+
+/* ---------- Theme tokens read from CSS ---------- */
+const T = {};
+function readTokens(){
+  const cs = getComputedStyle(document.documentElement);
+  ['bg','panel','fg','muted','line','grid','accent','good','cut','mut'].forEach(k => { T[k] = cs.getPropertyValue('--' + k).trim(); });
+}
+function rgba(hex, a){
+  let h = hex.replace('#', '');
+  if (h.length === 3) h = h.split('').map(c => c + c).join('');
+  const n = parseInt(h, 16);
+  return `rgba(${n >> 16 & 255},${n >> 8 & 255},${n & 255},${a})`;
+}
+
+/* ---------- State ---------- */
+let seed, rng, pop, gen, history, G;
+let scenes = [], sceneIdx = 0, sceneT = 0, rebuilt = false;
+let speed = 1, playing = !reduced;
+let V = {};
+
+function randomPopulation(){
+  return Array.from({ length: N }, () => Array.from({ length: L }, () => rng() < P1 ? 1 : 0));
+}
+
+/* Computes one full generation step. Everything the animation shows comes from this result. */
+function computeGeneration(current){
+  const fits = current.map(fitness);
+  const total = fits.reduce((a, b) => a + b, 0);
+  const w = total > 0 ? fits : fits.map(() => 1);
+  const wTotal = w.reduce((a, b) => a + b, 0);
+
+  // Roulette-wheel selection: N spins, probability proportional to fitness
+  const picks = [];
+  for (let i = 0; i < N; i++){
+    const r = rng() * wTotal;
+    let acc = 0, idx = N - 1;
+    for (let j = 0; j < N; j++){ acc += w[j]; if (r < acc){ idx = j; break; } }
+    picks.push({ idx, frac: r / wTotal });
+  }
+
+  // Single-point crossover on consecutive pairs
+  const pairs = [], children = [];
+  for (let k = 0; k < N; k += 2){
+    const a = current[picks[k].idx], b = current[picks[k + 1].idx];
+    const cut = 1 + Math.floor(rng() * (L - 1));
+    const c1 = a.slice(0, cut).concat(b.slice(cut));
+    const c2 = b.slice(0, cut).concat(a.slice(cut));
+    pairs.push({ pa: picks[k].idx, pb: picks[k + 1].idx, cut, c1, c2 });
+    children.push(c1, c2);
+  }
+
+  // Bit-flip mutation; at least one event per generation so the phase is always visible
+  const mutated = children.map(c => c.slice());
+  const events = [];
+  for (let i = 0; i < N; i++) for (let j = 0; j < L; j++) if (rng() < PM){ mutated[i][j] ^= 1; events.push({ child: i, bit: j, forced: false }); }
+  if (events.length === 0){
+    const i = Math.floor(rng() * N), j = Math.floor(rng() * L);
+    mutated[i][j] ^= 1; events.push({ child: i, bit: j, forced: true });
+  }
+
+  // Generational replacement with elitism = 1
+  const bestOld = fits.indexOf(Math.max(...fits));
+  const childFits = mutated.map(fitness);
+  const worstChild = childFits.indexOf(Math.min(...childFits));
+  const next = mutated.map(c => c.slice());
+  let eliteSlot = -1;
+  if (childFits[worstChild] < fits[bestOld]){ next[worstChild] = current[bestOld].slice(); eliteSlot = worstChild; }
+
+  return { fits, total, w, wTotal, picks, pairs, children, mutated, events, next, eliteSlot, bestOld, mean: mean(fits) };
+}
+
+function recordHistory(){
+  const f = pop.map(fitness);
+  history.push({ gen, avg: mean(f), best: Math.max(...f) });
+}
+
+function resetView(){
+  V = {
+    rowsIn: gen === 0 ? 0 : 1, evalIdx: -1, evalP: 0, evaluated: Array(N).fill(false), topP: 0,
+    wheelIn: 0, wheelTheta: 0, wheelFrom: 0, wheelTo: 0, wheelSel: -1, selFlash: 0, parents: [], tally: Array(N).fill(0),
+    pairIdx: 0, pairP: 0, childrenShown: 0,
+    childBits: G.children.map(c => c.slice()), mutIntro: 0, mutEv: null, mutP: 0, mutDone: [],
+    eliteP: 0, swapP: 0
+  };
+}
+
+/* ---------- Scene timeline for one generation ---------- */
+function buildScenes(){
+  G = computeGeneration(pop);
+  resetView();
+  scenes = []; sceneIdx = 0; sceneT = 0;
+
+  // 1. Population
+  scenes.push({ phase: 1, dur: gen === 0 ? 1500 : 900, tick: p => { V.rowsIn = p; } });
+
+  // 2. Fitness evaluation, one individual at a time, then highlight above-average ones
+  for (let j = 0; j < N; j++){
+    scenes.push({ phase: 2, dur: 420, tick: p => { V.evalIdx = j; V.evalP = p; }, end: () => { V.evaluated[j] = true; V.evalIdx = -1; } });
+  }
+  scenes.push({ phase: 2, dur: 1500, tick: p => { V.topP = p; } });
+
+  // 3. Roulette selection: wheel appears, then N spins
+  scenes.push({ phase: 3, dur: 700, tick: p => { V.wheelIn = p; } });
+  G.picks.forEach((pk, i) => {
+    scenes.push({
+      phase: 3, dur: i < 2 ? 1400 : 850,
+      start: () => {
+        V.wheelFrom = V.wheelTheta;
+        const target = -pk.frac * TAU;
+        const d = ((target - V.wheelFrom) % TAU + TAU) % TAU;
+        V.wheelTo = V.wheelFrom + TAU * 2 + d;
+      },
+      tick: p => { V.wheelTheta = lerp(V.wheelFrom, V.wheelTo, easeOut(p)); V.wheelSel = -1; },
+      end: () => { V.wheelTheta = V.wheelTo; }
+    });
+    scenes.push({ phase: 3, dur: 420, tick: p => { V.wheelSel = pk.idx; V.selFlash = 1 - p; }, end: () => { V.parents.push(pk.idx); V.tally[pk.idx]++; V.wheelSel = -1; } });
+  });
+
+  // 4. Crossover, one pair at a time
+  G.pairs.forEach((pr, k) => {
+    scenes.push({ phase: 4, dur: 1800, tick: p => { V.pairIdx = k; V.pairP = p; }, end: () => { V.childrenShown = 2 * (k + 1); } });
+  });
+
+  // 5. Mutation events
+  scenes.push({ phase: 5, dur: 700, tick: p => { V.mutIntro = p; } });
+  G.events.forEach(ev => {
+    scenes.push({
+      phase: 5, dur: 1100,
+      tick: p => { V.mutEv = ev; V.mutP = p; if (p >= 0.6 && !ev.applied){ V.childBits[ev.child][ev.bit] ^= 1; ev.applied = true; } },
+      end: () => { if (!ev.applied){ V.childBits[ev.child][ev.bit] ^= 1; ev.applied = true; } V.mutEv = null; V.mutDone.push(ev); }
+    });
+  });
+
+  // 6. Replacement: mark the elite, then slide the offspring into the population
+  scenes.push({ phase: 6, dur: 1000, tick: p => { V.eliteP = p; } });
+  scenes.push({ phase: 6, dur: 1900, tick: p => { V.swapP = p; }, end: commit });
+}
+
+function commit(){
+  pop = G.next;
+  gen++;
+  recordHistory();
+  updateStats();
+  drawChart();
+  buildScenes();
+  rebuilt = true;
+}
+
+function advance(dt){
+  let rem = dt;
+  let guard = 0;
+  while (rem > 0 && guard++ < 500){
+    const cur = scenes[sceneIdx];
+    if (!cur.started){ cur.started = true; if (cur.start) cur.start(); }
+    const need = cur.dur - sceneT;
+    if (rem < need){ sceneT += rem; rem = 0; cur.tick(sceneT / cur.dur); }
+    else {
+      rem -= need; cur.tick(1); if (cur.end) cur.end();
+      if (rebuilt) rebuilt = false; else sceneIdx++;
+      sceneT = 0;
+    }
+  }
+}
+
+function stepPhase(){
+  const ph = scenes[sceneIdx].phase;
+  let guard = 0;
+  while (guard++ < 300){
+    const cur = scenes[sceneIdx];
+    if (!cur.started){ cur.started = true; if (cur.start) cur.start(); }
+    cur.tick(1); if (cur.end) cur.end();
+    if (rebuilt) rebuilt = false; else sceneIdx++;
+    sceneT = 0;
+    if (scenes[sceneIdx].phase !== ph) break;
+  }
+  const nxt = scenes[sceneIdx];
+  if (!nxt.started){ nxt.started = true; if (nxt.start) nxt.start(); }
+  nxt.tick(0);
+  playing = false; syncPlayButton();
+}
+
+/* ---------- Canvas drawing helpers ---------- */
+const FAM = { d: '"Chakra Petch","Trebuchet MS",sans-serif', m: '"IBM Plex Mono",Menlo,monospace', b: '"IBM Plex Sans",system-ui,sans-serif' };
+function text(s, x, y, o = {}){
+  ctx.save();
+  ctx.font = `${o.weight || 400} ${o.size || 12}px ${FAM[o.fam || 'b']}`;
+  ctx.fillStyle = o.color || T.fg;
+  ctx.textAlign = o.align || 'left';
+  ctx.textBaseline = o.base || 'alphabetic';
+  if (o.alpha != null) ctx.globalAlpha *= clamp(o.alpha, 0, 1);
+  ctx.fillText(s, x, y);
+  ctx.restore();
+}
+function rrect(x, y, w, h, r){
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + w, y, x + w, y + h, r);
+  ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r);
+  ctx.arcTo(x, y, x + w, y, r);
+  ctx.closePath();
+}
+/* Draws a chromosome as a row of square cells: filled = 1, hollow = 0 */
+function drawChrom(x, y, bits, cell, gap, o = {}){
+  ctx.save();
+  if (o.alpha != null) ctx.globalAlpha *= clamp(o.alpha, 0, 1);
+  for (let i = 0; i < bits.length; i++){
+    const cx = x + i * (cell + gap);
+    const hl = o.hl && o.hl.has(i);
+    const col = hl && o.hlColor ? o.hlColor : T.accent;
+    rrect(cx, y, cell, cell, 2);
+    if (bits[i]){ ctx.fillStyle = col; ctx.fill(); }
+    else { ctx.fillStyle = rgba(T.fg, 0.05); ctx.fill(); ctx.lineWidth = 1; ctx.strokeStyle = hl ? col : T.line; ctx.stroke(); }
+    if (o.ring && o.ring.has(i)){ ctx.lineWidth = 2; ctx.strokeStyle = o.ringColor || T.mut; rrect(cx - 2, y - 2, cell + 4, cell + 4, 3); ctx.stroke(); }
+    if (o.digits !== false && cell >= 14 && bits[i]){
+      text('✓', cx + cell / 2, y + cell / 2 + 0.5, { size: cell * 0.66, fam: 'b', weight: 500, align: 'center', base: 'middle', color: '#ffffff' });
+    }
+  }
+  ctx.restore();
+}
+function placeholderChrom(x, y, cell, gap){
+  ctx.save(); ctx.globalAlpha *= 0.35;
+  for (let i = 0; i < L; i++){ rrect(x + i * (cell + gap), y, cell, cell, 2); ctx.lineWidth = 1; ctx.strokeStyle = T.line; ctx.stroke(); }
+  ctx.restore();
+}
+function pill(x, y, w, h, label, color, alpha){
+  ctx.save(); if (alpha != null) ctx.globalAlpha *= clamp(alpha, 0, 1);
+  ctx.fillStyle = rgba(color, 0.16); rrect(x, y, w, h, h / 2); ctx.fill();
+  text(label, x + w / 2, y + h / 2 + 0.5, { size: 10, fam: 'm', weight: 600, align: 'center', base: 'middle', color });
+  ctx.restore();
+}
+
+/* ---------- Layout constants ---------- */
+const LP = { x: 20, y0: 98, rowH: 42, cell: 18, gap: 3, cx: 72 };
+const CHW = L * (LP.cell + LP.gap) - LP.gap; // 249
+const RP = { x: 384, w: 306 };
+const RC = { x: RP.x + 44, y0: 72, pitch: 34 }; // offspring list geometry shared by phases 5 and 6
+
+/* ---------- Left panel: current population ---------- */
+function drawLeft(ph){
+  text(`GENERACIÓN ${gen}`, LP.x, 28, { size: 18, fam: 'd', weight: 700 });
+  text(solved() ? 'receta ideal encontrada' : `${N} recetas · ${L} ingredientes`, LP.cx + CHW + 50, 28, { size: 11, fam: 'm', color: solved() ? T.good : T.muted, align: 'right' });
+
+  // Ingredient names as rotated column headers; once solved, the target ingredients turn green
+  for (let i = 0; i < L; i++){
+    const inTarget = solved() && TARGET[i] === 1;
+    ctx.save();
+    ctx.translate(LP.cx + i * (LP.cell + LP.gap) + LP.cell / 2 + 3, LP.y0 - 10);
+    ctx.rotate(-Math.PI / 3);
+    ctx.font = `${inTarget ? 600 : 400} 10px ${FAM.m}`;
+    ctx.fillStyle = inTarget ? T.good : T.muted;
+    ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+    ctx.fillText(ING[i], 0, 0);
+    ctx.restore();
+  }
+
+  const allEval = V.evaluated.every(Boolean);
+  const q = ph === 6 ? easeInOut(V.swapP) : 0;
+  const hlAmt = allEval ? (ph === 2 ? easeOut(V.topP) : 1) : 0;
+
+  for (let j = 0; j < N; j++){
+    if (ph === 6 && G.eliteSlot >= 0 && j === G.bestOld) continue; // drawn separately as the moving elite
+    const y = LP.y0 + j * LP.rowH;
+    let a = 1, dx = 0;
+    if (ph === 1 && gen === 0) a = clamp(V.rowsIn * (N + 1) - j, 0, 1);
+    if (ph === 6){ dx = -430 * q; a = 1 - q; }
+    const above = G.fits[j] > G.mean;
+    const x = LP.cx + dx;
+    drawRow(j, x, y, a, above && hlAmt > 0 ? hlAmt : 0, ph);
+  }
+
+  if (ph === 6 && G.eliteSlot >= 0){
+    const j = G.bestOld;
+    const y = lerp(LP.y0 + j * LP.rowH, LP.y0 + G.eliteSlot * LP.rowH, q);
+    drawRow(j, LP.cx, y, 1, 1, ph);
+    pill(LP.cx + CHW + 10, y + LP.cell + 4, 44, 13, 'ÉLITE', T.good, easeOut(V.eliteP));
+  }
+}
+
+function drawRow(j, x, y, a, glow, ph){
+  const above = glow > 0;
+  if (above){
+    ctx.save(); ctx.globalAlpha = a * glow;
+    ctx.fillStyle = rgba(T.good, 0.11); rrect(x - 46, y - 7, CHW + 46 + 72, LP.rowH - 3, 6); ctx.fill();
+    ctx.strokeStyle = rgba(T.good, 0.55); ctx.lineWidth = 1; ctx.stroke();
+    ctx.restore();
+  }
+  text('#' + j, x - 40, y + 13, { size: 12, fam: 'm', weight: 600, color: T.muted, alpha: a });
+
+  // The jury tastes the recipe (sweep) and returns only a score (count-up); which ingredients match stays hidden
+  let hl = null, shown = null;
+  if (V.evaluated[j]) shown = G.fits[j];
+  else if (V.evalIdx === j){
+    const e = easeOut(V.evalP);
+    const k = Math.min(L, Math.floor(e * L + 0.0001));
+    hl = new Set(); for (let i = 0; i < k; i++) hl.add(i);
+    shown = Math.round(e * G.fits[j]);
+  }
+  drawChrom(x, y, pop[j], LP.cell, LP.gap, { alpha: a, hl, hlColor: T.good });
+
+  if (shown != null){
+    const barCol = above ? T.good : T.accent;
+    ctx.save(); ctx.globalAlpha = a;
+    ctx.fillStyle = rgba(T.fg, 0.08); rrect(x, y + LP.cell + 5, CHW, 4, 2); ctx.fill();
+    const bw = CHW * shown / L;
+    if (bw > 0){ ctx.fillStyle = barCol; rrect(x, y + LP.cell + 5, bw, 4, 2); ctx.fill(); }
+    ctx.restore();
+    text('f = ' + shown, x + CHW + 10, y + 13, { size: 13, fam: 'm', weight: 600, alpha: a, color: above ? T.good : T.fg });
+  }
+  if (ph >= 3 && ph < 6 && V.tally[j] > 0){
+    pill(x + CHW + 10, y + LP.cell + 4, 30, 13, '×' + V.tally[j], T.accent, a);
+  }
+}
+
+/* ---------- Right panel per phase ---------- */
+function panelTitle(s, sub){
+  text(s, RP.x + 12, 36, { size: 13, fam: 'd', weight: 700, color: T.muted });
+  if (sub) text(sub, RP.x + 12, 56, { size: 11, fam: 'm', color: T.muted });
+}
+
+function drawParamsPanel(){
+  panelTitle('PARÁMETROS DEL ALGORITMO');
+  const rows = [
+    ['Población', `N = ${N} recetas de pizza`],
+    ['Cromosoma', `L = ${L} ingredientes (con / sin)`],
+    ['Función fitness', 'coincidencias con el gusto · máx. 12'],
+    ['Selección', 'ruleta, p(i) = fᵢ / Σ f'],
+    ['Cruce', 'un punto, p_c = 1'],
+    ['Mutación', 'p_m = 0,03 por bit (≥ 1 por gen.)'],
+    ['Sustitución', 'generacional + elitismo 1'],
+    ['Semilla', String(seed)]
+  ];
+  let y = 70;
+  const a = gen === 0 ? easeOut(V.rowsIn) : 1;
+  rows.forEach(([k, v]) => {
+    text(k, RP.x + 12, y, { size: 11, color: T.muted, alpha: a });
+    text(v, RP.x + 12, y + 17, { size: 12.5, fam: 'm', weight: 600, alpha: a });
+    y += 44;
+  });
+  if (gen > 0){
+    const last = history[history.length - 1], prev = history[history.length - 2];
+    text(`Media actual f̄ = ${fmt(last.avg)} (${last.avg - prev.avg >= 0 ? '+' : ''}${fmt(last.avg - prev.avg)})`, RP.x + 12, y + 4, { size: 11, fam: 'm', color: T.good });
+  }
+}
+
+function drawFitnessPanel(){
+  panelTitle('FUNCIÓN FITNESS', 'el jurado prueba cada receta');
+  text('f = coincidencias', RP.x + 12, 102, { size: 26, fam: 'm', weight: 600 });
+  text('ingredientes que coinciden con el gusto secreto · máx. 12', RP.x + 12, 122, { size: 10.5, color: T.muted });
+  const done = V.evaluated.filter(Boolean).length;
+  if (V.evalIdx >= 0) text(`Evaluando #${V.evalIdx} …`, RP.x + 12, 160, { size: 12, fam: 'm', color: T.accent });
+  else text(`Evaluados: ${done} / ${N}`, RP.x + 12, 160, { size: 12, fam: 'm', color: T.muted });
+  // progress ticks
+  for (let j = 0; j < N; j++){
+    ctx.save(); ctx.fillStyle = V.evaluated[j] ? T.accent : (V.evalIdx === j ? rgba(T.accent, 0.4) : rgba(T.fg, 0.1));
+    rrect(RP.x + 12 + j * 34, 170, 28, 5, 2); ctx.fill(); ctx.restore();
+  }
+  if (done === N){
+    const a = easeOut(V.topP);
+    text('Media de la población', RP.x + 12, 218, { size: 11, color: T.muted, alpha: a });
+    text(`f̄ = ${fmt(G.mean)}`, RP.x + 12, 246, { size: 24, fam: 'm', weight: 600, alpha: a });
+    text('Mejor individuo', RP.x + 12, 288, { size: 11, color: T.muted, alpha: a });
+    text(`#${G.bestOld} · f = ${G.fits[G.bestOld]}`, RP.x + 12, 316, { size: 24, fam: 'm', weight: 600, color: T.good, alpha: a });
+    ctx.save(); ctx.globalAlpha = a; ctx.fillStyle = rgba(T.good, 0.11); rrect(RP.x + 12, 340, 14, 14, 3); ctx.fill(); ctx.strokeStyle = rgba(T.good, 0.6); ctx.stroke(); ctx.restore();
+    text('en verde: recetas con f > f̄', RP.x + 32, 352, { size: 11, color: T.muted, alpha: a });
+    text('El jurado no dice qué falla: solo da el puntaje.', RP.x + 12, 380, { size: 11, color: T.muted, alpha: a });
+  }
+}
+
+function drawWheelPanel(){
+  panelTitle('RULETA DE SELECCIÓN', 'p(i) = fᵢ / Σ f · 8 giros');
+  const s = easeOut(V.wheelIn);
+  const cx = RP.x + 104, cy = 188, r = 90 * s;
+  const w = G.w, tot = G.wTotal;
+
+  // slices
+  let a0 = -Math.PI / 2 + V.wheelTheta;
+  for (let j = 0; j < N; j++){
+    const frac = w[j] / tot;
+    const a1 = a0 + frac * TAU;
+    const alpha = 0.22 + 0.74 * (G.fits[j] / L);
+    ctx.beginPath(); ctx.moveTo(cx, cy); ctx.arc(cx, cy, r, a0, a1); ctx.closePath();
+    ctx.fillStyle = j === V.wheelSel ? T.good : rgba(T.accent, alpha); ctx.fill();
+    ctx.lineWidth = 2; ctx.strokeStyle = T.panel; ctx.stroke();
+    if (frac * TAU * r > 18 && s > 0.9){
+      const am = (a0 + a1) / 2;
+      text('#' + j, cx + Math.cos(am) * r * 0.66, cy + Math.sin(am) * r * 0.66, { size: 11, fam: 'm', weight: 600, align: 'center', base: 'middle', color: (j === V.wheelSel || alpha > 0.55) ? '#ffffff' : T.fg });
+    }
+    a0 = a1;
+  }
+  // hub
+  ctx.beginPath(); ctx.arc(cx, cy, 6 * s, 0, TAU); ctx.fillStyle = T.panel; ctx.fill(); ctx.strokeStyle = T.line; ctx.lineWidth = 1; ctx.stroke();
+  // pointer at the top
+  if (s > 0.5){
+    ctx.beginPath(); ctx.moveTo(cx - 8, cy - r - 10); ctx.lineTo(cx + 8, cy - r - 10); ctx.lineTo(cx, cy - r + 4); ctx.closePath();
+    ctx.fillStyle = T.fg; ctx.fill();
+  }
+  if (V.wheelSel >= 0){
+    ctx.save(); ctx.globalAlpha = 0.3 + 0.7 * V.selFlash; ctx.beginPath(); ctx.arc(cx, cy, r + 5, 0, TAU); ctx.lineWidth = 3; ctx.strokeStyle = T.good; ctx.stroke(); ctx.restore();
+    text(`elegido: #${V.wheelSel}`, cx, cy + r + 24, { size: 12, fam: 'm', weight: 600, align: 'center', color: T.good });
+  } else if (s >= 1 && V.parents.length < N){
+    text(`giro ${V.parents.length + 1} de ${N}`, cx, cy + r + 24, { size: 11, fam: 'm', align: 'center', color: T.muted });
+  }
+
+  // probability legend
+  const lx = RP.x + 214;
+  text('probabilidad', lx, 100, { size: 10, fam: 'm', color: T.muted, alpha: s });
+  for (let j = 0; j < N; j++){
+    const y = 118 + j * 17;
+    ctx.save(); ctx.globalAlpha = s; ctx.fillStyle = rgba(T.accent, 0.22 + 0.74 * (G.fits[j] / L)); rrect(lx, y - 8, 9, 9, 2); ctx.fill(); ctx.restore();
+    text('#' + j, lx + 15, y, { size: 11, fam: 'm', color: T.fg, alpha: s });
+    text((100 * w[j] / tot).toFixed(1).replace('.', ',') + ' %', lx + 84, y, { size: 11, fam: 'm', align: 'right', color: T.muted, alpha: s });
+  }
+
+  // selected parents
+  text('PADRES SELECCIONADOS', RP.x + 12, 328, { size: 11, fam: 'd', weight: 700, color: T.muted });
+  for (let i = 0; i < N; i++){
+    const x = RP.x + 12 + i * 36, y = 340;
+    if (i < V.parents.length){
+      ctx.fillStyle = rgba(T.accent, 0.16); rrect(x, y, 32, 24, 5); ctx.fill();
+      text('#' + V.parents[i], x + 16, y + 12.5, { size: 12, fam: 'm', weight: 600, align: 'center', base: 'middle', color: T.accent });
+    } else {
+      ctx.save(); ctx.setLineDash([3, 3]); ctx.strokeStyle = T.line; rrect(x, y, 32, 24, 5); ctx.stroke(); ctx.restore();
+    }
+  }
+  for (let k = 0; k < N / 2; k++){
+    const x = RP.x + 12 + k * 72;
+    ctx.beginPath(); ctx.moveTo(x + 2, 372); ctx.lineTo(x + 66, 372); ctx.lineWidth = 1; ctx.strokeStyle = T.line; ctx.stroke();
+    text('par ' + (k + 1), x + 34, 384, { size: 10, fam: 'm', align: 'center', color: T.muted });
+  }
+}
+
+function drawCrossPanel(){
+  const k = V.pairIdx, pr = G.pairs[k], p = V.pairP;
+  panelTitle('CRUCE DE UN PUNTO', `par ${k + 1}/${N / 2}: #${pr.pa} × #${pr.pb} · corte tras ${ING[pr.cut - 1]}`);
+  const cell = 14, gap = 2, chx = RP.x + 44;
+  const yA = 76, yB = 100, yC1 = 142, yC2 = 166;
+  const A = pop[pr.pa], B = pop[pr.pb];
+  const fp = clamp((p - 0.45) / 0.35, 0, 1), e = easeInOut(fp);
+  const tx = chx + pr.cut * (cell + gap);
+  const tailSet = new Set(Array.from({ length: L - pr.cut }, (_, i) => i));
+
+  text('#' + pr.pa, RP.x + 12, yA + 10, { size: 11, fam: 'm', weight: 600, color: T.muted });
+  text('#' + pr.pb, RP.x + 12, yB + 10, { size: 11, fam: 'm', weight: 600, color: T.muted });
+  drawChrom(chx, yA, A.slice(0, pr.cut), cell, gap);
+  drawChrom(chx, yB, B.slice(0, pr.cut), cell, gap);
+  drawChrom(tx, yA, A.slice(pr.cut), cell, gap, { alpha: 1 - e });
+  drawChrom(tx, yB, B.slice(pr.cut), cell, gap, { alpha: 1 - e });
+
+  if (p > 0.18){
+    const cp = clamp((p - 0.18) / 0.22, 0, 1);
+    const lx = tx - gap / 2;
+    ctx.save(); ctx.setLineDash([4, 3]); ctx.strokeStyle = T.cut; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(lx, yA - 8); ctx.lineTo(lx, yA - 8 + (yC2 + cell + 8 - (yA - 8)) * cp); ctx.stroke(); ctx.restore();
+    text('corte', lx, yA - 12, { size: 10, fam: 'm', weight: 600, align: 'center', color: T.cut, alpha: cp });
+  }
+  if (p > 0.45){
+    text('H' + (2 * k), RP.x + 12, yC1 + 10, { size: 11, fam: 'm', weight: 600, color: T.muted, alpha: e });
+    text('H' + (2 * k + 1), RP.x + 12, yC2 + 10, { size: 11, fam: 'm', weight: 600, color: T.muted, alpha: e });
+    drawChrom(chx, yC1, A.slice(0, pr.cut), cell, gap, { alpha: e });
+    drawChrom(chx, yC2, B.slice(0, pr.cut), cell, gap, { alpha: e });
+    drawChrom(tx, lerp(yB, yC1, e), B.slice(pr.cut), cell, gap, { hl: tailSet, hlColor: T.cut });
+    drawChrom(tx, lerp(yA, yC2, e), A.slice(pr.cut), cell, gap, { hl: tailSet, hlColor: T.cut });
+  }
+  // arrow between parents and children
+  ctx.save(); ctx.globalAlpha = 0.6; ctx.strokeStyle = T.muted; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(RP.x + 20, yB + cell + 6); ctx.lineTo(RP.x + 20, yC1 - 6); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(RP.x + 16, yC1 - 11); ctx.lineTo(RP.x + 20, yC1 - 6); ctx.lineTo(RP.x + 24, yC1 - 11); ctx.stroke();
+  ctx.restore();
+
+  // offspring list
+  text('DESCENDENCIA', RP.x + 12, 218, { size: 11, fam: 'd', weight: 700, color: T.muted });
+  text(`${V.childrenShown} / ${N}`, RP.x + 12 + 166 + 32, 218, { size: 10, fam: 'm', align: 'right', color: T.muted });
+  for (let i = 0; i < N; i++){
+    const y = 230 + i * 20;
+    text('H' + i, RP.x + 12, y + 10, { size: 10, fam: 'm', color: T.muted });
+    if (i < V.childrenShown) drawChrom(RP.x + 44, y, G.children[i], 12, 2, { digits: false });
+    else placeholderChrom(RP.x + 44, y, 12, 2);
+  }
+}
+
+function ringsFor(i){
+  const s = new Set();
+  V.mutDone.forEach(ev => { if (ev.child === i) s.add(ev.bit); });
+  return s;
+}
+
+function drawBolt(x, y, a){
+  ctx.save(); ctx.globalAlpha *= clamp(a, 0, 1);
+  ctx.fillStyle = T.mut;
+  ctx.beginPath();
+  ctx.moveTo(x + 1, y - 16); ctx.lineTo(x + 6, y - 16); ctx.lineTo(x + 2, y - 9); ctx.lineTo(x + 6, y - 9);
+  ctx.lineTo(x - 2, y); ctx.lineTo(x, y - 6); ctx.lineTo(x - 4, y - 6); ctx.closePath(); ctx.fill();
+  ctx.restore();
+}
+
+function drawMutationPanel(){
+  panelTitle('MUTACIÓN', `p_m = ${PM.toString().replace('.', ',')} por ingrediente · ${G.events.length} evento${G.events.length === 1 ? '' : 's'}`);
+  const cell = LP.cell, gap = LP.gap;
+  const intro = easeOut(V.mutIntro);
+  for (let i = 0; i < N; i++){
+    const y = RC.y0 + i * RC.pitch;
+    text('H' + i, RP.x + 12, y + 13, { size: 12, fam: 'm', weight: 600, color: T.muted, alpha: intro });
+    drawChrom(RC.x, y, V.childBits[i], cell, gap, { alpha: intro, ring: ringsFor(i) });
+  }
+  const ev = V.mutEv;
+  if (ev){
+    const p = V.mutP;
+    const cx = RC.x + ev.bit * (cell + gap), cy = RC.y0 + ev.child * RC.pitch;
+    if (p < 0.6){
+      drawBolt(cx + cell / 2, cy - 4, 1);
+      const rr = cell / 2 + 4 + 3 * Math.sin(p * TAU * 2);
+      ctx.save(); ctx.globalAlpha = 0.85; ctx.strokeStyle = T.mut; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(cx + cell / 2, cy + cell / 2, rr, 0, TAU); ctx.stroke(); ctx.restore();
+    }
+    if (p >= 0.35 && p < 0.6 && Math.floor(p * 36) % 2 === 0){
+      ctx.save(); ctx.fillStyle = T.mut; rrect(cx, cy, cell, cell, 2); ctx.fill(); ctx.restore();
+    }
+    if (p >= 0.6){
+      ctx.save(); ctx.globalAlpha = (1 - p) / 0.4 * 0.6; ctx.fillStyle = T.mut; rrect(cx - 4, cy - 4, cell + 8, cell + 8, 4); ctx.fill(); ctx.restore();
+    }
+    const cur = V.childBits[ev.child][ev.bit];
+    const before = ev.applied ? 1 - cur : cur, after = 1 - before;
+    text(`Mutación en H${ev.child}: ${ING[ev.bit]}`, RP.x + 12, 368, { size: 12, fam: 'm', weight: 600, color: T.mut });
+    text(`${before ? 'con' : 'sin'} → ${after ? 'con' : 'sin'}${ev.forced ? ' · garantizada' : ''}`, RP.x + 12, 386, { size: 12, fam: 'm', weight: 600, color: T.mut });
+  } else if (V.mutDone.length === G.events.length && V.mutIntro >= 1){
+    text('Ingredientes mutados marcados en amarillo', RP.x + 12, 368, { size: 12, fam: 'm', color: T.muted });
+  }
+  text('Cambio al azar: crea novedad que el cruce no puede.', RP.x + 12, 408, { size: 11, color: T.muted });
+}
+
+function drawReplacementPanel(){
+  const q = easeInOut(V.swapP);
+  const sub = G.eliteSlot >= 0
+    ? `élite #${G.bestOld} (f = ${G.fits[G.bestOld]}) reemplaza al peor hijo H${G.eliteSlot}`
+    : 'el mejor hijo iguala o supera al élite: sin reemplazo';
+  panelTitle('SUSTITUCIÓN GENERACIONAL', sub);
+  const cell = LP.cell, gap = LP.gap;
+  for (let i = 0; i < N; i++){
+    const sx = RC.x, sy = RC.y0 + i * RC.pitch;
+    const tx = LP.cx, ty = LP.y0 + i * LP.rowH;
+    const ring = ringsFor(i);
+    if (i === G.eliteSlot){
+      text('H' + i, RP.x + 12, sy + 13, { size: 12, fam: 'm', weight: 600, color: T.muted, alpha: 1 - q });
+      drawChrom(sx, sy, V.childBits[i], cell, gap, { alpha: 1 - q, ring });
+      ctx.save(); ctx.globalAlpha = (1 - q) * 0.8; ctx.strokeStyle = T.cut; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.moveTo(sx - 2, sy + cell / 2); ctx.lineTo(sx + CHW + 2, sy + cell / 2); ctx.stroke(); ctx.restore();
+      text('descartado: lo reemplaza el élite', sx, sy + cell + 12, { size: 10, fam: 'm', color: T.cut, alpha: 1 - q });
+      continue;
+    }
+    const x = lerp(sx, tx, q), y = lerp(sy, ty, q);
+    text('H' + i, RP.x + 12, sy + 13, { size: 12, fam: 'm', weight: 600, color: T.muted, alpha: 1 - q });
+    text('#' + i, tx - 40, ty + 13, { size: 12, fam: 'm', weight: 600, color: T.muted, alpha: q });
+    drawChrom(x, y, V.childBits[i], cell, gap, { ring });
+  }
+  if (V.swapP === 0){
+    text('La descendencia pasa a ser la nueva población.', RP.x + 12, 372, { size: 11, color: T.muted, alpha: easeOut(V.eliteP) });
+    text('El mejor individuo se conserva: el mejor fitness nunca baja.', RP.x + 12, 390, { size: 11, color: T.muted, alpha: easeOut(V.eliteP) });
+  }
+}
+
+function paint(){
+  readTokens();
+  ctx.clearRect(0, 0, W, H);
+  const ph = scenes[sceneIdx].phase;
+  // divider
+  ctx.beginPath(); ctx.moveTo(372, 20); ctx.lineTo(372, H - 20); ctx.strokeStyle = T.line; ctx.lineWidth = 1; ctx.stroke();
+  drawLeft(ph);
+  switch (ph){
+    case 1: drawParamsPanel(); break;
+    case 2: drawFitnessPanel(); break;
+    case 3: drawWheelPanel(); break;
+    case 4: drawCrossPanel(); break;
+    case 5: drawMutationPanel(); break;
+    case 6: drawReplacementPanel(); break;
+  }
+}
+
+/* ---------- Phase captions ---------- */
+const PHASES = {
+  1: { title: 'Población inicial.', text: 'Cada individuo es una receta de pizza: 12 ingredientes, cada uno con o sin (una celda marcada = lo lleva). La generación 0 se arma al azar; después, cada población proviene de la sustitución anterior.' },
+  2: { title: 'Función fitness.', text: 'Un jurado conoce el gusto secreto del grupo y devuelve un solo número: cuántos ingredientes coinciden (máximo 12). Nunca dice cuáles fallan. Las recetas que superan la media se resaltan en verde.' },
+  3: { title: 'Selección por ruleta.', text: 'Cada receta ocupa una porción de la ruleta proporcional a su puntaje. Se gira 8 veces: a mayor fitness, mayor probabilidad de ser elegida como padre. Una misma receta puede salir varias veces.' },
+  4: { title: 'Cruce de un punto.', text: 'Los padres se toman de a pares. Se elige un punto de corte al azar y las dos recetas intercambian los ingredientes que quedan a la derecha del corte (en naranja). Salen dos recetas hijas.' },
+  5: { title: 'Mutación.', text: 'Cada ingrediente de cada receta hija cambia (se agrega o se quita) con probabilidad p = 0,03. Es raro e impredecible, y es la única fuente de ingredientes que nadie había probado.' },
+  6: { title: 'Sustitución.', text: 'Las recetas hijas reemplazan a la población anterior. Se conserva la mejor receta (elitismo = 1), así el mejor puntaje nunca retrocede y la media tiende a subir.' }
+};
+let lastPhase = 0;
+function syncPhaseUI(){
+  const ph = scenes[sceneIdx].phase;
+  if (ph === lastPhase) return;
+  lastPhase = ph;
+  $('stepper').querySelectorAll('li').forEach(li => {
+    const n = +li.dataset.phase;
+    li.classList.toggle('active', n === ph);
+    li.classList.toggle('done', n < ph);
+  });
+  $('cap-title').textContent = PHASES[ph].title;
+  $('cap-text').textContent = ph === 1 && gen > 0
+    ? (solved()
+      ? `Generación ${gen}: una receta coincide en los 12 ingredientes con el gusto del grupo. En el escenario, los ingredientes de la receta ideal aparecen en verde. El ciclo sigue para mostrar cómo converge la población.`
+      : `Generación ${gen}: estas recetas son la descendencia de la generación anterior. Media actual f̄ = ${fmt(history[history.length - 1].avg)}.`)
+    : PHASES[ph].text;
+}
+
+/* ---------- Stats & chart ---------- */
+function updateStats(){
+  const last = history[history.length - 1], prev = history[history.length - 2];
+  $('st-gen').textContent = gen;
+  $('st-gen-d').textContent = gen === 0 ? 'población inicial' : `${gen} ciclo${gen === 1 ? '' : 's'} completado${gen === 1 ? '' : 's'}`;
+  $('st-avg').textContent = fmt(last.avg);
+  const d = $('st-avg-d');
+  if (prev){ const delta = last.avg - prev.avg; d.textContent = `${delta >= 0 ? '+' : ''}${fmt(delta)} vs. anterior`; d.classList.toggle('up', delta > 0); }
+  else { d.textContent = 'sin generación previa'; d.classList.remove('up'); }
+  $('st-best').textContent = last.best;
+  const gain = last.avg - history[0].avg;
+  $('st-gain').textContent = (gain >= 0 ? '+' : '') + fmt(gain);
+  $('seed-out').textContent = seed;
+  const tb = $('table-body');
+  tb.innerHTML = history.map(h => `<tr><td>${h.gen}</td><td>${fmt(h.avg)}</td><td>${h.best}</td></tr>`).join('');
+}
+
+const CH = { w: 360, h: 210, ml: 30, mr: 18, mt: 14, mb: 26 };
+CH.pw = CH.w - CH.ml - CH.mr; CH.ph = CH.h - CH.mt - CH.mb;
+function xmaxNow(){ return Math.max(10, gen + 1); }
+const xs = g => CH.ml + g / xmaxNow() * CH.pw;
+const ys = v => CH.mt + CH.ph - v / FMAX * CH.ph;
+
+function drawChart(){
+  const svg = $('chart');
+  const xmax = xmaxNow();
+  let s = '';
+  [0, 3, 6, 9, 12].forEach(v => {
+    s += `<line x1="${CH.ml}" x2="${CH.ml + CH.pw}" y1="${ys(v)}" y2="${ys(v)}" class="grid"/>`;
+    s += `<text x="${CH.ml - 6}" y="${ys(v)}" class="tick" text-anchor="end" dominant-baseline="middle">${v}</text>`;
+  });
+  const step = xmax <= 10 ? 1 : xmax <= 20 ? 2 : xmax <= 50 ? 5 : 10;
+  for (let g = 0; g <= xmax; g += step) s += `<text x="${xs(g)}" y="${CH.h - 8}" class="tick" text-anchor="middle">${g}</text>`;
+  s += `<line x1="${CH.ml}" x2="${CH.ml + CH.pw}" y1="${ys(0)}" y2="${ys(0)}" class="axis"/>`;
+  s += `<text x="${CH.ml + CH.pw}" y="${CH.h - 8}" class="tick" text-anchor="end" dy="-12">generación</text>`;
+  s += `<text x="${CH.ml + CH.pw}" y="${CH.mt - 5}" class="tick" text-anchor="end">coincidencias con el gusto</text>`;
+
+  const path = key => history.map((d, i) => (i ? 'L' : 'M') + xs(d.gen).toFixed(1) + ' ' + ys(d[key]).toFixed(1)).join(' ');
+  if (history.length > 1){
+    const first = history[0], last = history[history.length - 1];
+    s += `<path d="${path('avg')} L${xs(last.gen).toFixed(1)} ${ys(0)} L${xs(first.gen).toFixed(1)} ${ys(0)} Z" class="area"/>`;
+  }
+  s += `<path d="${path('best')}" class="line best"/><path d="${path('avg')}" class="line avg"/>`;
+  const last = history[history.length - 1];
+  const lx = xs(last.gen);
+  s += `<circle cx="${lx}" cy="${ys(last.best)}" r="4" class="dot best"/><circle cx="${lx}" cy="${ys(last.avg)}" r="4" class="dot avg"/>`;
+  const close = Math.abs(ys(last.best) - ys(last.avg)) < 16;
+  s += `<text x="${lx + 7}" y="${ys(last.best) - 5}" class="lbl">${last.best}</text>`;
+  s += `<text x="${lx + 7}" y="${ys(last.avg) + (close ? 16 : 4)}" class="lbl">${fmt(last.avg)}</text>`;
+  s += `<g id="hover" style="display:none"><line id="hv-line" class="hover-line" y1="${CH.mt}" y2="${ys(0)}"/><circle id="hv-b" r="4" class="dot best"/><circle id="hv-a" r="4" class="dot avg"/></g>`;
+  s += `<rect id="chart-hit" x="${CH.ml}" y="${CH.mt}" width="${CH.pw}" height="${CH.ph}" fill="transparent"/>`;
+  svg.innerHTML = s;
+}
+
+function chartHover(e){
+  const svg = $('chart');
+  const rect = svg.getBoundingClientRect();
+  const px = (e.clientX - rect.left) / rect.width * CH.w;
+  const g = clamp(Math.round((px - CH.ml) / CH.pw * xmaxNow()), 0, history.length - 1);
+  const d = history[g];
+  const x = xs(d.gen);
+  const hv = $('hover'); hv.style.display = '';
+  $('hv-line').setAttribute('x1', x); $('hv-line').setAttribute('x2', x);
+  $('hv-a').setAttribute('cx', x); $('hv-a').setAttribute('cy', ys(d.avg));
+  $('hv-b').setAttribute('cx', x); $('hv-b').setAttribute('cy', ys(d.best));
+  const tip = $('tooltip');
+  tip.hidden = false;
+  tip.textContent = `gen ${d.gen} · promedio ${fmt(d.avg)} · mejor ${d.best}`;
+  tip.style.left = (x / CH.w * 100) + '%';
+}
+function chartLeave(){ $('hover').style.display = 'none'; $('tooltip').hidden = true; }
+$('chart').addEventListener('pointermove', chartHover);
+$('chart').addEventListener('pointerleave', chartLeave);
+
+/* ---------- Controls ---------- */
+function syncPlayButton(){ $('btn-play').textContent = playing ? 'Pausar' : 'Reproducir'; }
+$('btn-play').addEventListener('click', () => { playing = !playing; syncPlayButton(); });
+$('btn-step').addEventListener('click', stepPhase);
+$('speed').addEventListener('change', e => { speed = parseFloat(e.target.value) || 1; });
+$('btn-reset').addEventListener('click', () => { init(Math.floor(Math.random() * 90000) + 10000); playing = !reduced; syncPlayButton(); });
+$('btn-table').addEventListener('click', () => {
+  const wrap = $('table-wrap'); wrap.hidden = !wrap.hidden;
+  $('btn-table').textContent = wrap.hidden ? 'Ver tabla' : 'Ocultar tabla';
+  $('btn-table').setAttribute('aria-pressed', String(!wrap.hidden));
+});
+document.addEventListener('keydown', e => {
+  if (e.target.tagName === 'SELECT' || e.target.tagName === 'INPUT') return;
+  if (e.code === 'Space'){ e.preventDefault(); playing = !playing; syncPlayButton(); }
+  if (e.code === 'ArrowRight'){ e.preventDefault(); stepPhase(); }
+});
+
+/* ---------- Canvas sizing ---------- */
+function resize(){
+  const avail = stageWrap.clientWidth - 2;
+  const cssW = Math.max(avail, 560);
+  const scale = cssW / W;
+  const dpr = window.devicePixelRatio || 1;
+  canvas.style.width = cssW + 'px';
+  canvas.style.height = Math.round(H * scale) + 'px';
+  canvas.width = Math.round(W * scale * dpr);
+  canvas.height = Math.round(H * scale * dpr);
+  ctx.setTransform(scale * dpr, 0, 0, scale * dpr, 0, 0);
+}
+new ResizeObserver(resize).observe(stageWrap);
+
+/* ---------- Boot ---------- */
+function init(s){
+  seed = s; rng = mulberry32(s);
+  TARGET = Array.from({ length: L }, () => rng() < 0.5 ? 1 : 0);
+  pop = randomPopulation(); gen = 0; history = [];
+  recordHistory();
+  buildScenes();
+  lastPhase = 0;
+  updateStats(); drawChart(); chartLeave();
+}
+let lastTs = 0;
+function loop(now){
+  const dt = lastTs ? Math.min(60, now - lastTs) : 0;
+  lastTs = now;
+  if (playing) advance(dt * speed);
+  const cur = scenes[sceneIdx];
+  if (!cur.started){ cur.started = true; if (cur.start) cur.start(); cur.tick(sceneT / cur.dur); }
+  syncPhaseUI();
+  paint();
+  requestAnimationFrame(loop);
+}
+function start(data){
+  const s = data && Number.isInteger(data.seed) ? data.seed : Math.floor(Math.random() * 90000) + 10000;
+  init(s);
+  $('hint').hidden = !reduced;
+  syncPlayButton();
+  resize();
+  requestAnimationFrame(loop);
+}
+try { if (window.claude && window.claude.hot && window.claude.hot.snapshot) window.claude.hot.snapshot(() => ({ seed })); } catch (err) { /* viewer without hot updates */ }
+if (window.claude && window.claude.hot && window.claude.hot.ready) window.claude.hot.ready(start);
+else start(window.claude && window.claude.hot ? window.claude.hot.data : null);
+})();
+</script>
+
+</body>
+</html>
