@@ -15,3 +15,4 @@ wheels/
 # Local agent tooling
 .atl/
 .claude/
+.DS_Store
